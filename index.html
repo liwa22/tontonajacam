@@ -162,17 +162,33 @@
       }
 
       function loadVideo(video) {
-        if (!video) return;
-        player.src = video.Url;
-        title.textContent = video.Judul || 'Tanpa Judul';
-        desc.textContent = video.Description || 'Tidak ada deskripsi.';
-        error.classList.add('hidden');
+  if (!video) return;
+  
+  // Update player dan teks
+  player.src = video.Url;
+  title.textContent = video.Judul || 'Tanpa Judul';
+  desc.textContent = video.Description || 'Tidak ada deskripsi.';
+  error.classList.add('hidden');
+  
+  // Update URL agar setiap video punya link unik
+  const newUrl = `/e/${video.id}`;
+  window.history.pushState({ videoId: video.id }, video.Judul, newUrl);
+  
+  // Update playlist aktif
+  document.querySelectorAll('.playlist-item').forEach(item => item.classList.remove('playlist-active'));
+  const active = Array.from(document.querySelectorAll('.playlist-item'))
+    .find(i => i.textContent === video.Judul);
+  if (active) active.classList.add('playlist-active');
+}
 
-        // Update playlist aktif
-        document.querySelectorAll('.playlist-item').forEach(item => item.classList.remove('playlist-active'));
-        const active = Array.from(document.querySelectorAll('.playlist-item')).find(i => i.textContent === video.Judul);
-        if (active) active.classList.add('playlist-active');
-      }
+// Jika user tekan tombol Back / Forward di browser
+window.addEventListener('popstate', (event) => {
+  const id = event.state?.videoId;
+  if (id) {
+    const video = videos.find(v => v.id === id);
+    if (video) loadVideo(video);
+  }
+});
 
       // Tombol Share
       shareButton.addEventListener('click', async () => {
