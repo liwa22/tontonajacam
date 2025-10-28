@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="monetag" content="82d151422eebfd582a09baed1158ba5f" />
+  <title>STREAM ENAK — Player with Auto Thumbnails</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- Axios -->
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+  <style>
+    :root{
+      --bg1: #0f172a;
+      --bg2: #312e81;
+      --accent-a: #06b6d4;
+      --accent-b: #a78bfa;
+    }
+    html,body { height:100%; }
+    body {
+      margin:0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background: linear-gradient(135deg,var(--bg1), var(--bg2));
+      color: #e6eef8;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+    }
+
+    /* Glass card */
+    .glass {
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.04);
+      backdrop-filter: blur(8px);
+    }
+
+    .spinner {
+      border: 4px solid rgba(255,255,255,0.12);
+      border-top: 4px solid var(--accent-a);
+      border-radius: 9999px;
+      width:48px; height:48px;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .thumb-img {
+      width:100%;
+      height:100%;
+      object-fit: cover;
+      display:block;
+    }
+
+    .playlist-item { transition: transform .18s ease, box-shadow .18s ease; }
+    .playlist-item:hover { transform: translateY(-6px); box-shadow: 0 10px 30px rgba(2,6,23,0.6); }
+    .active-item { outline: 2px solid rgba(167,139,250,0.18); box-shadow: 0 12px 36px rgba(167,139,250,0.08); }
+
+    .title-gradient {
+      background: linear-gradient(90deg, var(--accent-a), var(--accent-b), #ec4899);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-shadow: 0 0 10px rgba(236,72,153,0.12);
+    }
+
+    .no-select { user-select: none; -webkit-user-select: none; -ms-user-select: none; }
+    .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  </style>
+</head>
+
+<body class="min-h-screen flex flex-col">
+
+  <!-- HEADER -->
+  <header class="w-full sticky top-0 z-40 glass">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-3 no-select">
+        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-[#06b6d4] to-[#a78bfa] flex items-center justify-center text-white font-bold shadow-md">S</div>
+        <div>
+          <div class="text-white font-extrabold leading-none">STREAM ENAK</div>
+          <div class="text-xs text-white/60 -mt-0.5">Simple • Modern • Fast</div>
+        </div>
+      </a>
+
+      <div class="flex items-center gap-3">
+        <a href="https://videi.my.id/" class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-[#06b6d4] to-[#3b82f6] shadow-md text-white text-sm hover:opacity-95" title="Upload">
+          <i class="fas fa-upload"></i> Upload
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN LAYOUT -->
+  <main class="flex-1">
+    <div class="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-3 gap-8">
+
+      <!-- PLAYER -->
+      <section class="md:col-span-2">
+        <div id="player-wrap" class="glass rounded-xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <div id="badge-live" class="hidden text-xs font-semibold px-2 py-1 rounded-full bg-red-500 text-white">LIVE</div>
+              <div id="video-meta-title" class="text-sm text-white/80">Loading video...</div>
+            </div>
+            <div class="text-sm text-white/60">ID: <span id="video-id-label">—</span></div>
+          </div>
+
+          <div class="aspect-w-16 aspect-h-9 rounded-lg overflow-hidden relative">
+            <video id="video-player"
+                   controls
+                   preload="metadata"
+                   class="w-full h-full bg-black rounded-lg"
+                   controlsList="nodownload noremoteplayback"
+                   playsinline
+                   disablePictureInPicture
+                   crossorigin="anonymous">
+              Your browser does not support the video element.
+            </video>
+
+            <div id="loading-overlay" class="absolute inset-0 flex items-center justify-center" style="display:none;">
+              <div class="spinner"></div>
+            </div>
+          </div>
+
+          <div class="mt-4 flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <div class="text-lg font-semibold" id="video-title">Judul Video</div>
+              <div class="text-xs text-white/60 px-2 py-1 rounded-md glass hidden md:inline-block">Kategori</div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <div class="text-sm text-white/60 hidden sm:inline"><i class="fas fa-eye mr-1"></i> <span id="video-views">—</span></div>
+
+              <button id="share-button" class="px-3 py-2 rounded-md bg-gradient-to-r from-[#a78bfa] to-[#06b6d4] text-white text-sm shadow-md">
+                <i class="fas fa-share-alt mr-2"></i> Share
+              </button>
+            </div>
+          </div>
+
+          <div id="error-message" class="mt-3 text-sm text-red-300 hidden"></div>
+        </div>
+
+        <!-- PLAYLIST -->
+        <div class="mt-6">
+          <div class="text-sm text-white/80 mb-3 font-semibold">Playlist</div>
+          <div id="playlist-strip" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4"></div>
+        </div>
+      </section>
+
+      <!-- INFO PANEL -->
+      <aside class="md:col-span-1">
+        <div class="glass rounded-xl p-4 space-y-4">
+          <div>
+            <h1 id="video-title-side" class="text-xl font-bold text-white title-gradient">Judul Video</h1>
+            <p id="video-views-side" class="text-sm text-white/60 mt-1">— views • <span id="video-date">—</span></p>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between">
+              <h2 class="text-sm font-semibold text-white/90">Deskripsi</h2>
+              <button id="toggle-desc" class="text-xs text-white/60 hover:text-white">Tampilkan semua</button>
+            </div>
+            <p id="video-description" class="text-sm text-white/70 mt-2 line-clamp-3">Deskripsi akan tampil di sini setelah data dimuat.</p>
+          </div>
+
+          <ul class="text-sm text-white/70 space-y-2">
+            <li class="flex items-center gap-2"><i class="fas fa-user text-xs"></i> <span id="video-uploader">Uploader</span></li>
+            <li class="flex items-center gap-2"><i class="fas fa-clock text-xs"></i> <span id="video-duration">—</span></li>
+            <li class="flex items-center gap-2"><i class="fas fa-tags text-xs"></i> <span id="video-tags">—</span></li>
+          </ul>
+
+          <div class="flex gap-2">
+            <a id="btn-open-json" class="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-white/6 text-white text-sm hover:bg-white/8" target="_blank" rel="noopener">
+              <i class="fas fa-database"></i> JSON
+            </a>
+            <a id="btn-open-source" href="https://raw.githubusercontent.com/liwa22/json/refs/heads/main/Video.json" target="_blank" class="px-3 py-2 rounded-md bg-white/6 text-white text-sm hover:bg-white/8">Open</a>
+          </div>
+        </div>
+
+        <div class="glass rounded-xl p-4 mt-4 text-xs text-white/60">
+          <div class="font-semibold text-white">Tentang</div>
+          <div class="mt-2">Player ringan, responsif, fokus ke konten. Tekan <kbd class="px-1 bg-white/6 rounded">Space</kbd> untuk play/pause.</div>
+        </div>
+      </aside>
+
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="w-full py-6 mt-auto">
+    <div class="max-w-6xl mx-auto px-4 text-center text-white/60 text-sm">
+      &copy; 2026 Videy • Crafted for speed & clarity
+    </div>
+  </footer>
+
+  <script>
+  (function(){
+    const $ = id => document.getElementById(id);
+    const hide = el => el && (el.style.display = 'none');
+    const show = (el, d='block') => el && (el.style.display = d);
+
+    // Elements
+    const videoPlayer = $('video-player');
+    const loadingOverlay = $('loading-overlay');
+    const errorMessage = $('error-message');
+    const shareButton = $('share-button');
+    const videoTitle = $('video-title');
+    const videoTitleSide = $('video-title-side');
+    const videoDescription = $('video-description');
+    const videoMetaTitle = $('video-meta-title');
+    const videoIdLabel = $('video-id-label');
+    const videoViews = $('video-views');
+    const videoViewsSide = $('video-views-side');
+    const videoDate = $('video-date');
+    const videoUploader = $('video-uploader');
+    const videoDuration = $('video-duration');
+    const videoTags = $('video-tags');
+    const playlistStrip = $('playlist-strip');
+    const btnOpenJson = $('btn-open-json');
+
+    const JSON_URL = 'https://raw.githubusercontent.com/liwa22/json/refs/heads/main/Video.json';
+
+    // thumbnails cache (url->dataURL)
+    const thumbCache = new Map();
+
+    // get videoId from path or query ?id=
+    function getVideoIdFromUrl() {
+      let path = window.location.pathname || '';
+      if (path.startsWith('/')) path = path.slice(1);
+      let id = '';
+      if (path.startsWith('e/')) id = path.slice(2);
+      else id = path;
+      if (!id) {
+        const q = new URLSearchParams(window.location.search);
+        if (q.has('id')) id = q.get('id');
+      }
+      return id || '';
+    }
+
+    let currentVideoId = getVideoIdFromUrl();
+    videoIdLabel.textContent = currentVideoId || '—';
+
+    // show spinner
+    show(loadingOverlay, 'flex');
+
+    // FETCH JSON, build playlist, load video
+    axios.get(JSON_URL, { timeout: 10000 })
+      .then(resp => {
+        const videos = resp.data || [];
+        if (!Array.isArray(videos)) throw new Error('Invalid JSON format');
+
+        // Build playlist UI
+        playlistStrip.innerHTML = '';
+        videos.forEach((v, idx) => {
+          const id = v.id || v.ID || (`item-${idx}`);
+          const title = v.Judul || v.title || 'Untitled';
+          const desc = v.Description || v.description || '';
+          const src = v.Url || v.url || v.src || '';
+          const thumbField = v.Thumbnail || v.Thumb || v.thumb || v.poster || '';
+
+          // create item container
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'playlist-item glass rounded-lg p-0 overflow-hidden text-left focus:outline-none';
+          item.dataset.videoId = id;
+          item.dataset.url = src;
+          item.dataset.title = title;
+          item.dataset.desc = desc;
+          item.dataset.thumbField = thumbField;
+          item.setAttribute('aria-label', title);
+
+          // build inner HTML: placeholder until thumbnail ready
+          item.innerHTML = `
+            <div class="w-full h-36 bg-gradient-to-br from-black/10 to-black/20 flex items-center justify-center">
+              <div class="text-white/60">Memuat thumbnail…</div>
+            </div>
+            <div class="px-3 py-2">
+              <div class="text-sm font-semibold text-white truncate">${escapeHtml(title)}</div>
+              <div class="text-xs text-white/60 mt-1 line-clamp-3">${escapeHtml(desc)}</div>
+            </div>
+          `;
+
+          // click -> load video
+          item.addEventListener('click', () => {
+            loadVideoFromItem(item);
+            setActivePlaylistItem(item);
+            // update URL (push new state)
+            try {
+              const newUrl = `${location.origin}/e/${encodeURIComponent(id)}`;
+              history.replaceState(null, '', newUrl);
+            } catch(e){/* ignore */ }
+          });
+
+          playlistStrip.appendChild(item);
+
+          // asynchronously generate thumbnail (priority: JSON Thumbnail field > capture frame)
+          (async () => {
+            let thumbDataUrl = null;
+            if (thumbField) {
+              // use JSON thumbnail (no processing)
+              thumbDataUrl = thumbField;
+              thumbCache.set(src, thumbDataUrl);
+            } else {
+              // try capture first frame from video
+              try {
+                thumbDataUrl = await captureThumbnailFromVideo(src);
+                if (thumbDataUrl) thumbCache.set(src, thumbDataUrl);
+              } catch (e) {
+                // ignore, fallback to placeholder
+              }
+            }
+
+            // render thumbnail (or placeholder)
+            const thumbDiv = item.querySelector('div');
+            if (thumbDataUrl) {
+              thumbDiv.innerHTML = `<img class="thumb-img" src="${thumbDataUrl}" alt="${escapeHtml(title)}">`;
+            } else {
+              thumbDiv.innerHTML = placeholderThumbnail(title);
+            }
+          })();
+
+        }); // end forEach
+
+        // determine current video to load
+        let found = null;
+        if (currentVideoId) {
+          found = videos.find(v => (v.id === currentVideoId) || (v.ID === currentVideoId));
+        }
+        if (!found && videos.length) found = videos[0];
+
+        if (found) {
+          // locate corresponding playlist element and activate/load
+          const elBtn = Array.from(playlistStrip.children).find(b => b.dataset.videoId == (found.id || found.ID));
+          if (elBtn) {
+            setActivePlaylistItem(elBtn);
+            loadVideoFromItem(elBtn);
+          } else {
+            applyVideoData(found);
+          }
+        } else {
+          showError('Playlist kosong atau format JSON salah.');
+        }
+
+        // set json button
+        btnOpenJson.href = JSON_URL;
+      })
+      .catch(err => {
+        console.error(err);
+        showError('Error mengambil data video. Periksa URL JSON atau koneksi internet.');
+      })
+      .finally(() => {
+        setTimeout(() => hide(loadingOverlay), 450);
+      });
+
+    // Capture thumbnail from a video URL (attempts to load with crossOrigin anonymous)
+    async function captureThumbnailFromVideo(videoUrl) {
+      // If cached, return
+      if (thumbCache.has(videoUrl)) return thumbCache.get(videoUrl);
+
+      return new Promise((resolve, reject) => {
+        try {
+          const off = document.createElement('video');
+          off.crossOrigin = 'anonymous';
+          off.preload = 'metadata';
+          off.muted = true;
+          off.playsInline = true;
+          off.src = videoUrl;
+          off.style.position = 'fixed';
+          off.style.left = '-9999px';
+          off.style.width = '320px';
+          off.style.height = '180px';
+          off.setAttribute('aria-hidden', 'true');
+
+          // time to seek to (1s or middle if shorter)
+          const timer = setTimeout(() => {
+            cleanup();
+            reject(new Error('timeout loading video metadata'));
+          }, 12_000);
+
+          function cleanup() {
+            clearTimeout(timer);
+            try { off.src = ''; } catch(e){}
+            off.remove();
+          }
+
+          off.addEventListener('loadedmetadata', () => {
+            // choose time (1s or 0.5 * duration if shorter)
+            let t = 1;
+            if (off.duration && off.duration < 1) t = 0;
+            else if (off.duration && off.duration < 2) t = off.duration / 2;
+            off.currentTime = Math.min(t, off.duration || t);
+          }, { once: true });
+
+          off.addEventListener('seeked', () => {
+            try {
+              const canvas = document.createElement('canvas');
+              const w = Math.min(640, off.videoWidth || 640);
+              const h = Math.round(w * ((off.videoHeight || 360) / (off.videoWidth || 640)));
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+              cleanup();
+              resolve(dataUrl);
+            } catch (err) {
+              cleanup();
+              // drawing likely failed due to CORS; reject so caller can fallback
+              reject(err);
+            }
+          }, { once: true });
+
+          off.addEventListener('error', (e) => {
+            cleanup();
+            reject(new Error('error loading video for thumbnail'));
+          }, { once: true });
+
+          // append offscreen video to DOM only if necessary (not visible)
+          document.body.appendChild(off);
+          // start load
+          off.load();
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+
+    // placeholder thumbnail SVG data URL
+    function placeholderThumbnail(title) {
+      const s = escapeXml(title.slice(0,40));
+      const svg = `
+        <svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720'>
+          <defs>
+            <linearGradient id='g' x1='0' x2='1'>
+              <stop offset='0' stop-color='#06b6d4'/>
+              <stop offset='1' stop-color='#a78bfa'/>
+            </linearGradient>
+          </defs>
+          <rect width='100%' height='100%' fill='url(#g)' />
+          <rect x='0' y='0' width='100%' height='100%' fill='rgba(0,0,0,0.28)'/>
+          <text x='50%' y='50%' fill='rgba(255,255,255,0.95)' font-size='48' font-family='Inter, Arial, sans-serif' text-anchor='middle' dominant-baseline='middle'>
+            ${s}
+          </text>
+        </svg>
+      `;
+      return `<img class="thumb-img" src="data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}" alt="${escapeHtml(title)}">`;
+    }
+
+    // safely escape HTML
+    function escapeHtml(str = '') {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+    function escapeXml(s = '') {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // load video metadata into UI from a playlist-item element
+    function loadVideoFromItem(item) {
+      const url = item.dataset.url || '';
+      const title = item.dataset.title || 'Untitled';
+      const desc = item.dataset.desc || '';
+      const vidId = item.dataset.videoId || '';
+
+      if (!url) {
+        showError('Video URL kosong untuk item ini.');
+        return;
+      }
+
+      hide(errorMessage);
+      show(loadingOverlay, 'flex');
+
+      // set video src (do not autoplay)
+      videoPlayer.src = url;
+      videoTitle.textContent = title;
+      videoTitleSide.textContent = title;
+      videoDescription.textContent = desc;
+      videoIdLabel.textContent = vidId || '—';
+      videoViews.textContent = item.dataset.views || '—';
+      videoViewsSide.textContent = (item.dataset.views || '—') + ' views •';
+      videoDate.textContent = item.dataset.date || '—';
+      videoUploader.textContent = item.dataset.uploader || 'Uploader';
+      videoDuration.textContent = item.dataset.duration || '—';
+      videoTags.textContent = item.dataset.tags || '—';
+
+      // hide spinner when video loaded or error
+      const onCanPlay = () => { hide(loadingOverlay); cleanup(); };
+      const onError = () => { hide(loadingOverlay); showError('Error memutar video. Periksa koneksi atau format video.'); cleanup(); };
+      function cleanup() {
+        videoPlayer.removeEventListener('canplay', onCanPlay);
+        videoPlayer.removeEventListener('error', onError);
+      }
+      videoPlayer.addEventListener('canplay', onCanPlay);
+      videoPlayer.addEventListener('error', onError);
+
+      // scroll into view on small screens
+      if (window.innerWidth < 800) window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // apply video data from raw JSON object (fallback)
+    function applyVideoData(obj) {
+      const url = obj.Url || obj.url || obj.src || '';
+      videoPlayer.src = url;
+      videoTitle.textContent = obj.Judul || obj.title || 'Untitled';
+      videoTitleSide.textContent = obj.Judul || obj.title || 'Untitled';
+      videoDescription.textContent = obj.Description || obj.description || '';
+      videoViews.textContent = obj.Views || obj.views || '—';
+      videoViewsSide.textContent = (obj.Views || obj.views || '—') + ' views •';
+      videoDate.textContent = obj.Date || obj.date || '—';
+      videoUploader.textContent = obj.Uploader || obj.uploader || 'Uploader';
+      videoDuration.textContent = obj.Duration || obj.duration || '—';
+      videoTags.textContent = (obj.Tags && obj.Tags.join) ? obj.Tags.join(', ') : (obj.tags || '—');
+    }
+
+    // set active playlist item styling
+    function setActivePlaylistItem(btn) {
+      Array.from(playlistStrip.children).forEach(c => c.classList.remove('active-item'));
+      if (btn) btn.classList.add('active-item');
+    }
+
+    // show error helper
+    function showError(msg) {
+      errorMessage.textContent = msg;
+      errorMessage.style.display = 'block';
+    }
+
+    // Share / copy URL
+    shareButton.addEventListener('click', async () => {
+      const currentUrl = window.location.href;
+      try {
+        await navigator.clipboard.writeText(currentUrl);
+        const orig = shareButton.innerHTML;
+        shareButton.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        setTimeout(() => { shareButton.innerHTML = orig; }, 1600);
+      } catch {
+        alert('Gagal menyalin link. Salin manual: ' + currentUrl);
+      }
+    });
+
+    // disable right click on video
+    videoPlayer.addEventListener('contextmenu', e => e.preventDefault());
+
+    // keyboard space toggles play/pause (not when typing)
+    window.addEventListener('keydown', (ev) => {
+      const tag = document.activeElement && document.activeElement.tagName;
+      if (ev.code === 'Space' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        ev.preventDefault();
+        if (videoPlayer.paused) videoPlayer.play().catch(()=>{});
+        else videoPlayer.pause();
+      }
+    });
+
+    // toggle description expand/collapse
+    const toggleDescBtn = $('toggle-desc');
+    toggleDescBtn.addEventListener('click', () => {
+      const desc = $('video-description');
+      const expanded = desc.classList.toggle('line-clamp-3'); // toggle clamp
+      toggleDescBtn.textContent = expanded ? 'Sembunyikan' : 'Tampilkan semua';
+      // note: using line-clamp-3 class defined above
+    });
+
+    // Accessibility focus style for interactive elements
+    document.querySelectorAll('button, a').forEach(el => {
+      el.addEventListener('focus', () => el.classList.add('ring-2', 'ring-indigo-400', 'ring-opacity-30'));
+      el.addEventListener('blur', () => el.classList.remove('ring-2', 'ring-indigo-400', 'ring-opacity-30'));
+    });
+
+    // optional: autoplay next - commented by default
+    /*
+    videoPlayer.addEventListener('ended', () => {
+      const children = Array.from(playlistStrip.children);
+      const currentIndex = children.findIndex(c => c.classList.contains('active-item'));
+      const next = children[currentIndex + 1] || null;
+      if (next) {
+        next.click();
+        videoPlayer.play().catch(()=>{});
+      }
+    });
+    */
+
+  })();
+  </script>
+</body>
+</html>
